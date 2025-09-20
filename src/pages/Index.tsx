@@ -92,11 +92,11 @@ const Index = () => {
       return;
     }
 
-    // Navigate to processing page with image and analysis data
+    // Navigate to processing page with image and analysis options
     navigate('/processing', {
       state: {
         image: selectedImage,
-        analysisData: toggles,
+        analysisOptions: toggles,
       },
     });
   };

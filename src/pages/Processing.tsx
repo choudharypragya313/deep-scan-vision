@@ -3,43 +3,96 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Layout } from '@/components/Layout';
 import { X } from 'lucide-react';
+import { ImageAnalysisService } from '@/services/imageAnalysis';
+import { useUser } from '@/contexts/UserContext';
+import { useToast } from '@/hooks/use-toast';
 
 const Processing = () => {
   const [progress, setProgress] = useState(0);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useUser();
+  const { toast } = useToast();
 
-  // Get the uploaded image from location state
+  // Get the uploaded image and analysis options from location state
   const uploadedImage = location.state?.image;
+  const analysisOptions = location.state?.analysisOptions;
 
   useEffect(() => {
-    if (!uploadedImage) {
+    if (!uploadedImage || !analysisOptions) {
       navigate('/');
       return;
     }
 
-    // Simulate processing with progress updates
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          // Navigate to results after processing completes
-          setTimeout(() => {
-            navigate('/results', {
-              state: {
-                image: uploadedImage,
-                analysisData: location.state?.analysisData
-              }
-            });
-          }, 500);
-          return 100;
-        }
-        return prev + Math.random() * 15;
-      });
-    }, 300);
+    let progressInterval: NodeJS.Timeout;
+    let statusInterval: NodeJS.Timeout;
 
-    return () => clearInterval(interval);
-  }, [uploadedImage, navigate, location.state]);
+    const startAnalysis = async () => {
+      try {
+        // Start the upload and analysis
+        const id = await ImageAnalysisService.uploadAndAnalyze(
+          uploadedImage,
+          analysisOptions,
+          user?.id
+        );
+        setAnalysisId(id);
+
+        // Start progress simulation
+        progressInterval = setInterval(() => {
+          setProgress(prev => {
+            const increment = Math.random() * 10 + 5;
+            return Math.min(prev + increment, 95); // Cap at 95% until we get results
+          });
+        }, 500);
+
+        // Poll for completion
+        statusInterval = setInterval(async () => {
+          const result = await ImageAnalysisService.getAnalysisStatus(id);
+          if (result?.status === 'completed') {
+            clearInterval(progressInterval);
+            clearInterval(statusInterval);
+            setProgress(100);
+            
+            setTimeout(() => {
+              navigate('/results', {
+                state: {
+                  analysisId: id,
+                  image: uploadedImage,
+                  results: result.results
+                }
+              });
+            }, 500);
+          } else if (result?.status === 'failed') {
+            clearInterval(progressInterval);
+            clearInterval(statusInterval);
+            toast({
+              variant: "destructive",
+              title: "Analysis failed",
+              description: result.error_message || "An error occurred during analysis.",
+            });
+            navigate('/');
+          }
+        }, 2000);
+
+      } catch (error) {
+        console.error('Analysis error:', error);
+        toast({
+          variant: "destructive",
+          title: "Upload failed",
+          description: error instanceof Error ? error.message : "Failed to start analysis.",
+        });
+        navigate('/');
+      }
+    };
+
+    startAnalysis();
+
+    return () => {
+      if (progressInterval) clearInterval(progressInterval);
+      if (statusInterval) clearInterval(statusInterval);
+    };
+  }, [uploadedImage, analysisOptions, navigate, user, toast]);
 
   const handleCancel = () => {
     navigate('/');

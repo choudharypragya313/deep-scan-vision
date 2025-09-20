@@ -54,7 +54,16 @@ const Login = () => {
     if (!validateForm()) return;
 
     // Simulate login/register success
-    login(name, email);
+    const success = login(name, email, password);
+    
+    if (!success) {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: "Please check your credentials.",
+      });
+      return;
+    }
     
     toast({
       title: isLogin ? "Welcome back!" : "Account created!",

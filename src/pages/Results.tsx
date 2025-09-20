@@ -7,41 +7,76 @@ import { useUser } from '@/contexts/UserContext';
 import { Copy, Download, RotateCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { FeedbackSection } from '@/components/FeedbackSection';
+import { ImageAnalysisService } from '@/services/imageAnalysis';
+import { supabase } from '@/integrations/supabase/client';
 
 const Results = () => {
   const [results, setResults] = useState<any[]>([]);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
 
   const uploadedImage = location.state?.image;
-  const analysisData = location.state?.analysisData;
+  const analysisId = location.state?.analysisId;
+  const analysisResults = location.state?.results;
 
   useEffect(() => {
-    if (!uploadedImage) {
+    if (!uploadedImage && !analysisId) {
       navigate('/');
       return;
     }
 
-    // Generate mock results based on enabled toggles
-    const mockResults = [
-      { label: 'AI Score', value: '72%', enabled: analysisData?.aiScore },
-      { label: 'Edited/Altered Image Check', value: 'No edits detected', enabled: analysisData?.editCheck },
-      { label: 'Image Information', value: 'JPEG, 1920x1080, 2.4MB', enabled: analysisData?.imageInfo },
-      { label: 'Image Matches', value: '3 similar images found online', enabled: analysisData?.imageMatches },
-      { label: 'Location', value: 'GPS data not available', enabled: analysisData?.location },
-      { label: 'OCR Text', value: 'Sample text extracted from image...', enabled: analysisData?.ocr },
-      { label: 'Timestamp', value: new Date().toLocaleString(), enabled: analysisData?.timestamp },
-    ].filter(result => result.enabled);
+    // If we have analysis results from the backend, use them
+    if (analysisResults) {
+      const formattedResults = Object.entries(analysisResults).map(([key, value]) => {
+        const labelMap: Record<string, string> = {
+          aiScore: 'AI Score',
+          editCheck: 'Edited/Altered Image Check',
+          imageInfo: 'Image Information',
+          imageMatches: 'Image Matches',
+          location: 'Location',
+          ocr: 'OCR Text',
+          timestamp: 'Timestamp',
+        };
+        
+        return {
+          label: labelMap[key] || key,
+          value: value as string
+        };
+      });
 
-    // Animate results with staggered fade-in
-    mockResults.forEach((result, index) => {
-      setTimeout(() => {
-        setResults(prev => [...prev, result]);
-      }, index * 200);
-    });
-  }, [uploadedImage, analysisData, navigate]);
+      // Animate results with staggered fade-in
+      formattedResults.forEach((result, index) => {
+        setTimeout(() => {
+          setResults(prev => [...prev, result]);
+        }, index * 200);
+      });
+    }
+
+    // If we have an analysis ID, get the image URL from storage
+    if (analysisId) {
+      const fetchImageUrl = async () => {
+        try {
+          const { data } = await supabase
+            .from('image_analysis')
+            .select('image_path')
+            .eq('id', analysisId)
+            .single();
+
+          if (data?.image_path) {
+            const url = await ImageAnalysisService.getImageUrl(data.image_path);
+            setImageUrl(url);
+          }
+        } catch (error) {
+          console.error('Error fetching image URL:', error);
+        }
+      };
+      
+      fetchImageUrl();
+    }
+  }, [uploadedImage, analysisId, analysisResults, navigate]);
 
   const handleCopyTimestamp = () => {
     const timestamp = new Date().toLocaleString();
@@ -84,12 +119,22 @@ const Results = () => {
               <CardTitle className="neon-text">Analyzed Image</CardTitle>
             </CardHeader>
             <CardContent>
-              {uploadedImage && (
+              {uploadedImage ? (
                 <img
                   src={URL.createObjectURL(uploadedImage)}
                   alt="Analyzed"
                   className="w-full h-64 object-cover rounded-lg neon-border"
                 />
+              ) : imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt="Analyzed"
+                  className="w-full h-64 object-cover rounded-lg neon-border"
+                />
+              ) : (
+                <div className="w-full h-64 bg-muted rounded-lg neon-border flex items-center justify-center">
+                  <p className="text-muted-foreground">Loading image...</p>
+                </div>
               )}
             </CardContent>
           </div>
